@@ -4,7 +4,7 @@ import Plot from 'react-plotly.js';
 
 function App() {
   const [symbol, setSymbol] = useState('SMCI');
-  const [period, setPeriod] = useState('1mo');
+  const [period, setPeriod] = useState('12mo');
   const [interval, setInterval] = useState('1d');
   const [history, setHistory] = useState([]);
   const [info, setInfo] = useState({});
@@ -14,11 +14,24 @@ function App() {
   const [error, setError] = useState('');
   const [selectedOption, setSelectedOption] = useState(null);
 
+  const [searchTerm, setSearchTerm] = useState('');
+
   const [showFilings, setShowFilings] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
+  const [showNews, setShowNews] = useState(false);
   const [filings, setFilings] = useState([]);
+  const [news, setNews] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [expandedIndex, setExpandedIndex] = useState(null);
+
+
+  const filteredFilings = filings.filter(f =>
+    f.title.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const filteredNews = news.filter(n =>
+    n.headline.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   const fetchOptions = async (sym, expiration = null) => {
     const url = expiration
@@ -63,8 +76,15 @@ function App() {
     }
   }, [showFilings, symbol]);
 
-  const handleInputChange = (e) => setSymbol(e.target.value.toUpperCase());
+  useEffect(() => {
+    if (showNews) {
+      axios.get(`http://localhost:8000/api/news/${symbol}/`)
+        .then(res => setNews(res.data.news))
+        .catch(() => setNews([]));
+    }
+  }, [showNews, symbol]);
 
+  const handleInputChange = (e) => setSymbol(e.target.value.toUpperCase());
   const handleExpirationChange = async (e) => {
     const newExp = e.target.value;
     try {
@@ -90,6 +110,7 @@ function App() {
     const strikeList = options.calls.map(c => c.strike);
     const closestIndex = strikeList.reduce((bestIdx, strike, idx) =>
       Math.abs(strike - price) < Math.abs(strikeList[bestIdx] - price) ? idx : bestIdx, 0);
+    const closestStrike = strikeList[closestIndex];
 
     const start = Math.max(0, closestIndex - strikeWindow);
     const end = closestIndex + strikeWindow + 1;
@@ -100,8 +121,45 @@ function App() {
     };
   })();
 
+  const volumeChart = options.calls.length && options.puts.length && (
+    <Plot
+      data={[
+        {
+          x: filteredOptions.calls.map(c => c.strike),
+          y: filteredOptions.calls.map(c => c.volume ?? 0),
+          type: 'bar',
+          name: 'Calls',
+          marker: { color: 'green' }
+        },
+        {
+          x: filteredOptions.puts.map(p => p.strike),
+          y: filteredOptions.puts.map(p => p.volume ?? 0),
+          type: 'bar',
+          name: 'Puts',
+          marker: { color: 'red' }
+        }
+      ]}
+      layout={{
+        title: 'Options Volume by Strike Price',
+        barmode: 'group',
+        width: 800,
+        height: 400,
+        xaxis: {
+          title: { text: 'Strike Price', standoff: 10 },
+          automargin: true
+        },
+        yaxis: {
+          title: { text: 'Volume', standoff: 10 },
+          automargin: true
+        },
+        margin: { t: 50, l: 60, r: 30, b: 60 }
+      }}
+    />
+  );
+
+
   return (
-    <div style={{ backgroundColor: showFilings ? '#121212' : '#fff', color: showFilings ? '#eee' : '#000', minHeight: '100vh' }}>
+    <div style={{ backgroundColor: (showFilings || showNews) ? '#121212' : '#fff', color: (showFilings || showNews) ? '#eee' : '#000', minHeight: '100vh' }}>
       <div style={{
         display: 'flex',
         justifyContent: 'space-between',
@@ -110,12 +168,15 @@ function App() {
         color: '#fff',
         padding: '1rem'
       }}>
-        <h2>{showFilings ? 'SEC Filings' : showOptions ? 'Options Chain' : 'Stock Dashboard'}</h2>
+        <h2>{showFilings ? 'SEC Filings' : showOptions ? 'Options Chain' : showNews ? 'News Headlines' : 'Stock Dashboard'}</h2>
         <div style={{ display: 'flex', gap: '1rem' }}>
           <button
             onClick={() => {
-              setShowOptions(!showOptions);
+              const goingBack = showOptions;
+              setShowOptions(!goingBack);
+              setSearchTerm('');
               setShowFilings(false);
+              setShowNews(false);
               setSelectedOption(null);
             }}
             style={{ padding: '8px', background: '#333', color: 'white', border: '1px solid #666' }}
@@ -124,22 +185,126 @@ function App() {
           </button>
           <button
             onClick={() => {
-              setShowFilings(!showFilings);
+              const goingBack = showFilings;
+              setCurrentPage(1);
+              setSearchTerm('');
+              setShowFilings(!goingBack);
               setShowOptions(false);
+              setShowNews(false);
               setSelectedOption(null);
             }}
             style={{ padding: '8px', background: '#333', color: 'white', border: '1px solid #666' }}
           >
             {showFilings ? 'Back to Dashboard' : 'View SEC Filings'}
           </button>
+          <button
+            onClick={() => {
+              const goingBack = showNews;
+              setCurrentPage(1);
+              setShowNews(!goingBack);
+              setSearchTerm('');
+              setShowFilings(false);
+              setShowOptions(false);
+              setSelectedOption(null);
+            }}
+            style={{ padding: '8px', background: '#333', color: 'white', border: '1px solid #666' }}
+          >
+          {showNews ? 'Back to Dashboard' : 'News Headlines'}
+          </button>
         </div>
       </div>
 
-      {showFilings ? (
+      {showNews ? (
         <div style={{ padding: '1rem' }}>
-          <h3>SEC Filings for {symbol}</h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+            <h3 style={{ margin: 0 }}>Latest News for {symbol}</h3>
+            <label>
+              Page:&nbsp;
+              <select
+                value={currentPage}
+                onChange={(e) => setCurrentPage(Number(e.target.value))}
+                style={{ padding: '4px' }}
+              >
+                {Array.from({ length: Math.ceil(filteredNews.length / 20) }, (_, i) => (
+                  <option key={i + 1} value={i + 1}>
+                    {i + 1}
+                  </option>
+                ))}
+              </select>
+              &nbsp;of {Math.ceil(filteredNews.length / 20)}
+            </label>
+          </div>
+
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => {
+              setSearchTerm(e.target.value);
+              setCurrentPage(1);
+            }}
+            placeholder="Search news headlines..."
+            style={{ padding: '0.5rem', marginBottom: '1rem', width: '100%' }}
+          />
+
           <ul style={{ listStyle: 'none', padding: 0 }}>
-            {filings.slice((currentPage - 1) * 20, currentPage * 20).map((filing, idx) => (
+            {filteredNews.slice((currentPage - 1) * 20, currentPage * 20).map((article, idx) => (
+              <li key={idx} style={{ margin: '1rem 0', padding: '1rem', background: '#1e1e1e', borderRadius: '5px' }}>
+                <strong>
+                  <a href={article.url} target="_blank" rel="noopener noreferrer" style={{ color: '#79bfff' }}>
+                    {article.headline}
+                  </a>
+                </strong>
+                <p>{article.summary}</p>
+                <p style={{ fontSize: '0.8em', color: '#aaa' }}>
+                  {article.source} — {new Date(article.datetime * 1000).toLocaleString()}
+                </p>
+              </li>
+            ))}
+          </ul>
+
+          <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
+            <button onClick={() => setCurrentPage(p => Math.max(p - 1, 1))} disabled={currentPage === 1}>
+              Previous
+            </button>
+            <button onClick={() => setCurrentPage(p => p + 1)} disabled={(currentPage * 20) >= filteredNews.length}>
+              Next
+            </button>
+          </div>
+        </div>
+      ) : showFilings ? (
+        <div style={{ padding: '1rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+            <h3 style={{ margin: 0 }}>SEC Filings for {symbol}</h3>
+            <label>
+              Page:&nbsp;
+              <select
+                value={currentPage}
+                onChange={(e) => setCurrentPage(Number(e.target.value))}
+                style={{ padding: '4px' }}
+              >
+                {Array.from({ length: Math.ceil(filteredFilings.length / 20) }, (_, i) => (
+                  <option key={i + 1} value={i + 1}>
+                    {i + 1}
+                  </option>
+                ))}
+              </select>
+              &nbsp;of {Math.ceil(filteredFilings.length / 20)}
+            </label>
+          </div>
+
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => {
+              setSearchTerm(e.target.value);
+              setCurrentPage(1); // reset pagination on new search
+            }}
+            placeholder="Search filing titles..."
+            style={{ padding: '0.5rem', marginBottom: '1rem', width: '100%' }}
+          />
+
+          <ul style={{ listStyle: 'none', padding: 0 }}>
+            {filteredFilings.slice((currentPage - 1) * 20, currentPage * 20).map((filing, idx) => (
               <li key={idx} style={{ margin: '1rem 0', padding: '1rem', background: '#1e1e1e', borderRadius: '5px', cursor: 'pointer' }}
                 onClick={() => setExpandedIndex(idx === expandedIndex ? null : idx)}>
                 <div><strong>{filing.title}</strong></div>
@@ -154,59 +319,103 @@ function App() {
               </li>
             ))}
           </ul>
+
           <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
             <button onClick={() => setCurrentPage(p => Math.max(p - 1, 1))} disabled={currentPage === 1}>Previous</button>
-            <button onClick={() => setCurrentPage(p => p + 1)} disabled={(currentPage * 20) >= filings.length}>Next</button>
+            <button onClick={() => setCurrentPage(p => p + 1)} disabled={(currentPage * 20) >= filteredFilings.length}>Next</button>
           </div>
         </div>
       ) : showOptions ? (
-        <div style={{ padding: '1rem', display: 'flex', gap: '2rem' }}>
-          <div>
-            <div style={{ display: 'flex', gap: '2rem', alignItems: 'center', marginBottom: '1rem' }}>
-              <label>
-                Expiration Date:
-                <select value={options.expiration} onChange={handleExpirationChange} style={{ marginLeft: '8px', padding: '4px' }}>
-                  {options.expirations.map((exp, idx) => <option key={idx} value={exp}>{exp}</option>)}
-                </select>
-              </label>
-              <label>
-                Show ± Strikes:
-                <select value={strikeWindow} onChange={handleStrikeWindowChange} style={{ marginLeft: '8px', padding: '4px' }}>
-                  {[5, 10, 15, 20, 25].map(n => <option key={n} value={n}>{`±${n}`}</option>)}
-                </select>
-              </label>
+        <div style={{ padding: '1rem' }}>
+          <div style={{ display: 'flex', gap: '2rem', alignItems: 'flex-start' }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ display: 'flex', gap: '2rem', alignItems: 'center', marginBottom: '1rem' }}>
+                <label>
+                  Expiration Date:
+                  <select value={options.expiration} onChange={handleExpirationChange} style={{ marginLeft: '8px', padding: '4px' }}>
+                    {options.expirations.map((exp, idx) => (
+                      <option key={idx} value={exp}>{exp}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Show ± Strikes:
+                  <select value={strikeWindow} onChange={handleStrikeWindowChange} style={{ marginLeft: '8px', padding: '4px' }}>
+                    {[5, 10, 15, 20, 25].map(n => (
+                      <option key={n} value={n}>{`±${n}`}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              <table border="1" cellPadding="5">
+                <thead>
+                  <tr>
+                    <th>Bid (Call)</th><th>Ask (Call)</th><th>Strike</th><th>Ask (Put)</th><th>Bid (Put)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredOptions.calls.map((call, idx) => {
+                    const put = filteredOptions.puts[idx] || {};
+                    const isSelected = selectedOption?.strike === call.strike;
+                    const strikeList = filteredOptions.calls.map(c => c.strike);
+                    const price = info.currentPrice;
+                    const closestIndex = strikeList.reduce((bestIdx, strike, i) =>
+                      Math.abs(strike - price) < Math.abs(strikeList[bestIdx] - price) ? i : bestIdx, 0);
+                    const closestStrike = strikeList[closestIndex];
+
+                    const handleClick = () => setSelectedOption(isSelected ? null : {
+                      strike: call.strike,
+                      callGreeks: {
+                        delta: call.delta, gamma: call.gamma, theta: call.theta,
+                        vega: call.vega, rho: call.rho
+                      },
+                      putGreeks: {
+                        delta: put.delta, gamma: put.gamma, theta: put.theta,
+                        vega: put.vega, rho: put.rho
+                      }
+                    });
+
+                    const rowColor = isSelected
+                      ? '#d0ebff'
+                      : call.strike === closestStrike
+                      ? '#b6f7b0'
+                      : 'transparent';
+
+                    return (
+                      <tr key={idx} onClick={handleClick} style={{ cursor: 'pointer', backgroundColor: rowColor }}>
+                        <td>{call.bid ?? '–'}</td>
+                        <td>{call.ask ?? '–'}</td>
+                        <td>{call.strike}</td>
+                        <td>{put.ask ?? '–'}</td>
+                        <td>{put.bid ?? '–'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
-            <table border="1" cellPadding="5">
-              <thead>
-                <tr>
-                  <th>Bid (Call)</th><th>Ask (Call)</th><th>Strike</th><th>Ask (Put)</th><th>Bid (Put)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredOptions.calls.map((call, idx) => {
-                  const put = filteredOptions.puts[idx] || {};
-                  const isSelected = selectedOption?.strike === call.strike;
-                  const handleClick = () => setSelectedOption(isSelected ? null : {
-                    strike: call.strike,
-                    callGreeks: { delta: call.delta, gamma: call.gamma, theta: call.theta, vega: call.vega, rho: call.rho },
-                    putGreeks: { delta: put.delta, gamma: put.gamma, theta: put.theta, vega: put.vega, rho: put.rho }
-                  });
-                  return (
-                    <tr key={idx} onClick={handleClick} style={{ cursor: 'pointer', backgroundColor: isSelected ? '#d0ebff' : '' }}>
-                      <td>{call.bid ?? '–'}</td><td>{call.ask ?? '–'}</td><td>{call.strike}</td>
-                      <td>{put.ask ?? '–'}</td><td>{put.bid ?? '–'}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+
+            <div style={{ flex: 1 }}>
+              <div>{volumeChart}</div>
+              {selectedOption && (
+                <div style={{ marginTop: '2rem' }}>
+                  <Plot
+                    data={[
+                      { x: ['Delta', 'Gamma', 'Theta', 'Vega', 'Rho'], y: Object.values(selectedOption.callGreeks), type: 'bar', name: 'Call' },
+                      { x: ['Delta', 'Gamma', 'Theta', 'Vega', 'Rho'], y: Object.values(selectedOption.putGreeks), type: 'bar', name: 'Put' }
+                    ]}
+                    layout={{
+                      title: `Greeks for Strike ${selectedOption.strike}`,
+                      barmode: 'group',
+                      width: 600,
+                      height: 400
+                    }}
+                  />
+                </div>
+              )}
+            </div>
           </div>
-          {selectedOption && (
-            <Plot data={[
-              { x: ['Delta', 'Gamma', 'Theta', 'Vega', 'Rho'], y: Object.values(selectedOption.callGreeks), type: 'bar', name: 'Call' },
-              { x: ['Delta', 'Gamma', 'Theta', 'Vega', 'Rho'], y: Object.values(selectedOption.putGreeks), type: 'bar', name: 'Put' }
-            ]} layout={{ title: `Greeks for Strike ${selectedOption.strike}`, barmode: 'group', width: 600, height: 400 }} />
-          )}
         </div>
       ) : (
         <div style={{ padding: '1rem' }}>
