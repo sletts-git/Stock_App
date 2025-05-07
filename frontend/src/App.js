@@ -154,7 +154,7 @@ function App() {
   const volumes = history.map(d => d.Volume);
   const volumeColors = history.map(d => (d.Close >= d.Open ? 'green' : 'red'));
   const maxVolume = Math.max(...volumes);
-  const volumeYMax = Math.ceil((maxVolume * 4) / 100_000_000) * 100_000_000;
+  const volumeYMax = Math.ceil((maxVolume * 3.33) / 25_000_000) * 25_000_000;
 
   const filteredOptions = (() => {
     const price = info.currentPrice;
@@ -516,7 +516,6 @@ function App() {
                   </select>
                 </label>
               </div>
-
               <table border="1" cellPadding="5">
                 <thead>
                   <tr>
@@ -566,6 +565,15 @@ function App() {
             </div>
 
             <div style={{ flex: 1 }}>
+              <div style={{ marginTop: '1rem' }}>
+                <strong>Put/Call Ratio:</strong>{' '}
+                {(() => {
+                  const totalCalls = filteredOptions.calls.reduce((sum, c) => sum + (c.volume || 0), 0);
+                  const totalPuts = filteredOptions.puts.reduce((sum, p) => sum + (p.volume || 0), 0);
+                  const ratio = totalCalls ? (totalPuts / totalCalls).toFixed(2) : '–';
+                  return ratio;
+                })()}
+              </div>
               <div>{volumeChart}</div>
               {selectedOption && (
                 <div style={{ marginTop: '2rem' }}>
@@ -594,7 +602,7 @@ function App() {
               <input
                 value={symbol}
                 onChange={handleInputChange}
-                style={{ marginLeft: 8, padding: '4px', width: '80px' }}
+                style={{ marginTop: 8, padding: '4px', width: '80px' }}
               />
             </label>
             <label>
@@ -609,7 +617,7 @@ function App() {
                     setInterval(valid[0]);
                   }
                 }}
-                style={{ marginLeft: 8, padding: '4px' }}
+                style={{ marginTop: 8, padding: '4px' }}
               >
                 {Object.keys(validIntervals).map(p => (
                   <option key={p} value={p}>{p}</option>
@@ -621,7 +629,7 @@ function App() {
               <select
                 value={interval}
                 onChange={(e) => setInterval(e.target.value)}
-                style={{ marginLeft: 8, padding: '4px' }}
+                style={{ marginTop: 8, padding: '4px' }}
               >
                 {availableIntervals.map(i => (
                   <option key={i} value={i}>{i}</option>
@@ -694,10 +702,11 @@ function App() {
                     overlaying: 'y',
                     side: 'right',
                     showgrid: false,
-                    title: {text: 'Volume'},
+                    title: { text: 'Volume' },
                     range: [0, volumeYMax],
                     tickformat: '~s',
-                    dtick: 250_000_000
+                    tick0: 0,
+                    nticks: 4
                   },
                   margin: { t: 50, l: 60, r: 60, b: 60 },
                   showlegend: false

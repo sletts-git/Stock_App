@@ -90,7 +90,7 @@ def get_quote_data(request, symbol):
         period = request.GET.get("period", "1mo")
         interval = request.GET.get("interval", "1d")
 
-        hist = stock.history(period=period, interval=interval)
+        hist = stock.history(period=period, interval=interval, prepost=True)
         hist.reset_index(inplace=True)
         date_col = "Datetime" if "Datetime" in hist.columns else "Date"
         hist[date_col] = hist[date_col].astype(str)
