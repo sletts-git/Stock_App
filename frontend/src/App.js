@@ -4,8 +4,8 @@ import Plot from 'react-plotly.js';
 
 function App() {
   const [symbol, setSymbol] = useState('SMCI');
-  const [period, setPeriod] = useState('12mo');
-  const [interval, setInterval] = useState('1d');
+  const [period, setPeriod] = useState('2y');
+  const [interval, setInterval] = useState('1wk');
   const [history, setHistory] = useState([]);
   const [info, setInfo] = useState({});
   const [options, setOptions] = useState({ calls: [], puts: [], expiration: '', expirations: [] });
@@ -32,6 +32,38 @@ function App() {
   const filteredNews = news.filter(n =>
     n.headline.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const validIntervals = {
+    '1d':  ['1m', '2m', '5m', '15m', '30m', '60m', '90m'],
+    '5d':  ['1m', '2m', '5m', '15m', '30m', '60m', '90m', '1d'],
+    '7d':  ['1m', '2m', '5m', '15m', '30m', '60m', '90m', '1d'],
+    '14d': ['2m', '5m', '15m', '30m', '60m', '90m', '1d', '1wk'],
+    '1mo': ['2m', '5m', '15m', '30m', '60m', '90m', '1d', '1wk'],
+    '3mo': ['60m', '1d', '1wk', '1mo'],
+    '6mo': ['60m','1d', '1wk', '1mo'],
+    '1y':  ['60m', '1d', '1wk', '1mo'],
+    '2y':  ['60m', '1d', '1wk', '1mo'],
+    '5y':  ['1d', '1wk', '1mo'],
+    '10y': ['1d', '1wk', '1mo'],
+    'ytd': ['60m', '1d', '1wk', '1mo'],
+    'max': ['1d', '1wk', '1mo']
+  };
+
+  const availableIntervals = validIntervals[period] || ['1d'];
+
+  function computeEMA(data, window) {
+    const k = 2 / (window + 1);
+    const emaArray = [];
+    let emaPrev = data[0];
+
+    for (let i = 0; i < data.length; i++) {
+      const price = data[i];
+      emaPrev = i === 0 ? price : price * k + emaPrev * (1 - k);
+      emaArray.push(emaPrev);
+    }
+
+    return emaArray;
+  }
 
   const fetchOptions = async (sym, expiration = null) => {
     const url = expiration
@@ -102,6 +134,14 @@ function App() {
 
   const dates = history.map(x => x.Date);
   const closePrices = history.map(x => x.Close);
+  const ema16 = computeEMA(closePrices, 16);
+  const ema52 = computeEMA(closePrices, 52);
+
+  const volumes = history.map(d => d.Volume);
+  const volumeColors = history.map(d => (d.Close >= d.Open ? 'green' : 'red'));
+
+  const maxVolume = Math.max(...volumes);
+  const volumeYMax = Math.ceil((maxVolume * 4) / 100_000_000) * 100_000_000;
 
   const filteredOptions = (() => {
     const price = info.currentPrice;
@@ -422,27 +462,119 @@ function App() {
           <div style={{ display: 'flex', gap: '2rem', alignItems: 'center', margin: '1rem 0' }}>
             <label>
               Stock Symbol:
-              <input value={symbol} onChange={handleInputChange} style={{ marginLeft: 8, padding: '4px', width: '80px' }} />
+              <input
+                value={symbol}
+                onChange={handleInputChange}
+                style={{ marginLeft: 8, padding: '4px', width: '80px' }}
+              />
             </label>
             <label>
               Period:
-              <select value={period} onChange={(e) => setPeriod(e.target.value)} style={{ marginLeft: 8, padding: '4px' }}>
-                {['1d', '5d', '1mo', '3mo', '6mo', '12mo'].map(p => <option key={p} value={p}>{p}</option>)}
+              <select
+                value={period}
+                onChange={(e) => {
+                  const newPeriod = e.target.value;
+                  setPeriod(newPeriod);
+                  const valid = validIntervals[newPeriod] || ['1d'];
+                  if (!valid.includes(interval)) {
+                    setInterval(valid[0]);
+                  }
+                }}
+                style={{ marginLeft: 8, padding: '4px' }}
+              >
+                {Object.keys(validIntervals).map(p => (
+                  <option key={p} value={p}>{p}</option>
+                ))}
               </select>
             </label>
             <label>
               Interval:
-              <select value={interval} onChange={(e) => setInterval(e.target.value)} style={{ marginLeft: 8, padding: '4px' }}>
-                {['1m', '5m', '15m', '30m', '1d', '1wk'].map(i => <option key={i} value={i}>{i}</option>)}
+              <select
+                value={interval}
+                onChange={(e) => setInterval(e.target.value)}
+                style={{ marginLeft: 8, padding: '4px' }}
+              >
+                {availableIntervals.map(i => (
+                  <option key={i} value={i}>{i}</option>
+                ))}
               </select>
             </label>
           </div>
+
           {loading && <p>Loading data...</p>}
           {error && <p style={{ color: 'red' }}>{error}</p>}
+
           {history.length > 0 && (
             <>
-              <h3>{info.shortName || symbol} ({symbol})</h3>
-              <Plot data={[{ x: dates, y: closePrices, type: 'scatter', mode: 'lines+markers' }]} layout={{ title: `${symbol} Price`, width: 800, height: 400 }} />
+              <h3>
+                {info.shortName || symbol} ({symbol}) ${info.currentPrice?.toFixed(2) ?? '–'}
+              </h3>
+
+              <Plot
+                data={[
+                  {
+                    x: dates,
+                    open: history.map(d => d.Open),
+                    high: history.map(d => d.High),
+                    low: history.map(d => d.Low),
+                    close: history.map(d => d.Close),
+                    type: 'candlestick',
+                    name: 'Price',
+                    increasing: { line: { color: '#28a745' } },
+                    decreasing: { line: { color: '#dc3545' } }
+                  },
+                  {
+                    x: dates,
+                    y: ema16,
+                    type: 'scatter',
+                    mode: 'lines',
+                    name: 'EMA-16',
+                    line: { color: '#007bff', width: 1.5 }
+                  },
+                  {
+                    x: dates,
+                    y: ema52,
+                    type: 'scatter',
+                    mode: 'lines',
+                    name: 'EMA-52',
+                    line: { color: '#ff9800', width: 1.5 }
+                  },
+                  {
+                    x: dates,
+                    y: volumes,
+                    type: 'bar',
+                    name: 'Volume',
+                    yaxis: 'y2',
+                    marker: { color: volumeColors },
+                    opacity: 0.4
+                  }
+                ]}
+                layout={{
+                  title: `${symbol} Price`,
+                  height: 500,
+                  xaxis: {
+                    title: { text: 'Date' },
+                    rangeslider: { visible: false },
+                    automargin: true
+                  },
+                  yaxis: {
+                    title: { text: 'Price (USD)' },
+                    automargin: true
+                  },
+                  yaxis2: {
+                    overlaying: 'y',
+                    side: 'right',
+                    showgrid: false,
+                    title: {text: 'Volume'},
+                    range: [0, volumeYMax],
+                    tickformat: '~s',
+                    dtick: 250_000_000
+                  },
+                  margin: { t: 50, l: 60, r: 60, b: 60 },
+                  showlegend: false
+                }}
+                style={{ width: '100%' }}
+              />
             </>
           )}
         </div>
