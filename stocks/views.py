@@ -101,7 +101,24 @@ def get_quote_data(request, symbol):
         info = {
             "symbol": symbol,
             "shortName": stock.info.get("shortName", ""),
-            "currentPrice": stock.info.get("currentPrice", "N/A")
+            "currentPrice": stock.info.get("currentPrice"),
+            "marketCap": stock.info.get("marketCap"),
+            "trailingPE": stock.info.get("trailingPE"),
+            "priceToBook": stock.info.get("priceToBook"),
+            "grossMargins": stock.info.get("grossMargins"),
+            "operatingMargins": stock.info.get("operatingMargins"),
+            "returnOnEquity": stock.info.get("returnOnEquity"),
+            "revenueGrowth": stock.info.get("revenueGrowth"),
+            "earningsGrowth": stock.info.get("earningsGrowth"),
+            "ebitdaMargins": stock.info.get("ebitdaMargins"),
+            "totalCash": stock.info.get("totalCash"),
+            "totalDebt": stock.info.get("totalDebt"),
+            "currentRatio": stock.info.get("currentRatio"),
+            "shortPercentOfFloat": stock.info.get("shortPercentOfFloat"),
+            "shortRatio": stock.info.get("shortRatio"),
+            "beta": stock.info.get("beta"),
+            "averageVolume": stock.info.get("averageVolume"),
+            "volume": stock.info.get("volume")
         }
 
         return Response({"history": data, "info": info})
@@ -186,4 +203,31 @@ def get_news_data(request, symbol):
 
         return Response({"news": results})
     except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['GET'])
+def get_financial_metrics(request, symbol):
+    import requests
+    import os
+
+    api_key = os.getenv("FMP_API_KEY")
+    if not api_key:
+        return Response({"error": "FMP API key not set"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    base_url = "https://financialmodelingprep.com/api/v3"
+    try:
+        km_data = requests.get(f"{base_url}/key-metrics/{symbol}?limit=5&apikey={api_key}")
+        km_data.raise_for_status()
+        km_data = km_data.json()
+
+        ratio_data = requests.get(f"{base_url}/ratios/{symbol}?limit=5&apikey={api_key}")
+        ratio_data.raise_for_status()
+        ratio_data = ratio_data.json()
+
+        return Response({
+            "keyMetrics": km_data,
+            "ratios": ratio_data
+        })
+    except Exception as e:
+        print("Error in get_financial_metrics:", e)
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
