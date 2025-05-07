@@ -159,7 +159,7 @@ def get_options_data(request, symbol):
 def get_sec_filings(request, symbol):
     try:
         headers = {
-            "User-Agent": "MyAppName/1.0 (haileynicolec@gmail.com)"
+            "User-Agent": "dashboard/1.0 (seankergratis@gmail.com)"
         }
         url = f"https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK={symbol}&type=&output=atom"
         response = requests.get(url, headers=headers)

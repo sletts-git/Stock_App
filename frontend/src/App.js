@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef  } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Plot from 'react-plotly.js';
 
@@ -16,10 +16,6 @@ function App() {
   const [selectedMetric, setSelectedMetric] = useState(null);
 
   const [searchTerm, setSearchTerm] = useState('');
-
-  const fetchedFinancials = useRef(new Set());
-  const fetchedNews = useRef(new Set());
-  const fetchedFilings = useRef(new Set());
 
   const [showFinancials, setShowFinancials] = useState(false);
   const [showFilings, setShowFilings] = useState(false);
@@ -110,32 +106,27 @@ function App() {
   useEffect(() => {
     const fetchTabData = async () => {
       try {
-        if (showFilings && !fetchedFilings.current.has(symbol)) {
+        if (showFilings) {
           const res = await axios.get(`http://localhost:8000/api/filings/${symbol}/`);
           setFilings(res.data.filings);
-          fetchedFilings.current.add(symbol);
         }
 
-        if (showNews && !fetchedNews.current.has(symbol)) {
+        if (showNews) {
           const res = await axios.get(`http://localhost:8000/api/news/${symbol}/`);
           setNews(res.data.news);
-          fetchedNews.current.add(symbol);
         }
 
-        if (showFinancials && !fetchedFinancials.current.has(symbol)) {
+        if (showFinancials) {
           const res = await axios.get(`http://localhost:8000/api/financials/${symbol}/`);
           setFinancials(res.data);
-          fetchedFinancials.current.add(symbol);
         }
       } catch (err) {
         console.error("Tab fetch error:", err.message || err);
-
         if (showFilings) setFilings([]);
         if (showNews) setNews([]);
         if (showFinancials) setFinancials({ keyMetrics: [], ratios: [] });
       }
     };
-
     fetchTabData();
   }, [symbol, showFilings, showNews, showFinancials]);
 
