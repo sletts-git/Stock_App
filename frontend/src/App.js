@@ -4,21 +4,24 @@ import Plot from 'react-plotly.js';
 
 function App() {
   const [symbol, setSymbol] = useState('SMCI');
-  const [period, setPeriod] = useState('2y');
-  const [interval, setInterval] = useState('1wk');
+  const [period, setPeriod] = useState('ytd');
+  const [interval, setInterval] = useState('1d');
   const [history, setHistory] = useState([]);
   const [info, setInfo] = useState({});
   const [options, setOptions] = useState({ calls: [], puts: [], expiration: '', expirations: [] });
-  const [strikeWindow, setStrikeWindow] = useState(5);
+  const [strikeWindow, setStrikeWindow] = useState(10);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [selectedOption, setSelectedOption] = useState(null);
+  const [selectedMetric, setSelectedMetric] = useState(null);
 
   const [searchTerm, setSearchTerm] = useState('');
 
+  const [showFinancials, setShowFinancials] = useState(false);
   const [showFilings, setShowFilings] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
   const [showNews, setShowNews] = useState(false);
+  const [financials, setFinancials] = useState({ keyMetrics: [], ratios: [] });
   const [filings, setFilings] = useState([]);
   const [news, setNews] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
@@ -73,48 +76,59 @@ function App() {
     return res.data.data;
   };
 
-  const fetchData = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const [quoteRes, optionsData] = await Promise.all([
-        axios.get(`http://localhost:8000/api/quote/${symbol}/?period=${period}&interval=${interval}`),
-        fetchOptions(symbol)
-      ]);
-      setHistory(quoteRes.data.history);
-      setInfo(quoteRes.data.info);
-      setOptions(optionsData);
-      setSelectedOption(null);
-    } catch (err) {
-      setError(`Error fetching data for ${symbol}: ${err.response?.data?.error || err.message}`);
-      setHistory([]);
-      setInfo({});
-      setOptions({ calls: [], puts: [], expiration: '', expirations: [] });
-      setSelectedOption(null);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    fetchData();
+    const fetchQuoteAndOptions = async () => {
+      setLoading(true);
+      setError('');
+      try {
+        const [quoteRes, optionsData] = await Promise.all([
+          axios.get(`http://localhost:8000/api/quote/${symbol}/?period=${period}&interval=${interval}`),
+          fetchOptions(symbol)
+        ]);
+        setHistory(quoteRes.data.history);
+        setInfo(quoteRes.data.info);
+        setOptions(optionsData);
+        setSelectedOption(null);
+      } catch (err) {
+        setError(`Error fetching data for ${symbol}: ${err.response?.data?.error || err.message}`);
+        setHistory([]);
+        setInfo({});
+        setOptions({ calls: [], puts: [], expiration: '', expirations: [] });
+        setSelectedOption(null);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchQuoteAndOptions();
   }, [symbol, period, interval]);
 
   useEffect(() => {
-    if (showFilings) {
-      axios.get(`http://localhost:8000/api/filings/${symbol}/`)
-        .then(res => setFilings(res.data.filings))
-        .catch(() => setFilings([]));
-    }
-  }, [showFilings, symbol]);
+    const fetchTabData = async () => {
+      try {
+        if (showFilings) {
+          const res = await axios.get(`http://localhost:8000/api/filings/${symbol}/`);
+          setFilings(res.data.filings);
+        }
 
-  useEffect(() => {
-    if (showNews) {
-      axios.get(`http://localhost:8000/api/news/${symbol}/`)
-        .then(res => setNews(res.data.news))
-        .catch(() => setNews([]));
-    }
-  }, [showNews, symbol]);
+        if (showNews) {
+          const res = await axios.get(`http://localhost:8000/api/news/${symbol}/`);
+          setNews(res.data.news);
+        }
+
+        if (showFinancials) {
+          const res = await axios.get(`http://localhost:8000/api/financials/${symbol}/`);
+          setFinancials(res.data);
+        }
+      } catch (err) {
+        console.error("Tab fetch error:", err.message || err);
+        if (showFilings) setFilings([]);
+        if (showNews) setNews([]);
+        if (showFinancials) setFinancials({ keyMetrics: [], ratios: [] });
+      }
+    };
+    fetchTabData();
+  }, [symbol, showFilings, showNews, showFinancials]);
 
   const handleInputChange = (e) => setSymbol(e.target.value.toUpperCase());
   const handleExpirationChange = async (e) => {
@@ -139,7 +153,6 @@ function App() {
 
   const volumes = history.map(d => d.Volume);
   const volumeColors = history.map(d => (d.Close >= d.Open ? 'green' : 'red'));
-
   const maxVolume = Math.max(...volumes);
   const volumeYMax = Math.ceil((maxVolume * 4) / 100_000_000) * 100_000_000;
 
@@ -199,7 +212,11 @@ function App() {
 
 
   return (
-    <div style={{ backgroundColor: (showFilings || showNews) ? '#121212' : '#fff', color: (showFilings || showNews) ? '#eee' : '#000', minHeight: '100vh' }}>
+    <div style={{
+      backgroundColor: (showFilings || showNews) ? '#121212' : '#fff',
+      color: (showFilings || showNews) ? '#eee' : '#000',
+      minHeight: '100vh'
+    }}>
       <div style={{
         display: 'flex',
         justifyContent: 'space-between',
@@ -208,51 +225,83 @@ function App() {
         color: '#fff',
         padding: '1rem'
       }}>
-        <h2>{showFilings ? 'SEC Filings' : showOptions ? 'Options Chain' : showNews ? 'News Headlines' : 'Stock Dashboard'}</h2>
+        <h2>
+          {showFilings
+            ? 'SEC Filings'
+            : showOptions
+            ? 'Options Chain'
+            : showNews
+            ? 'News Headlines'
+            : showFinancials
+            ? 'Financial Summary'
+            : 'Stock Dashboard'}
+        </h2>
+
         <div style={{ display: 'flex', gap: '1rem' }}>
           <button
             onClick={() => {
               const goingBack = showOptions;
               setShowOptions(!goingBack);
-              setSearchTerm('');
               setShowFilings(false);
               setShowNews(false);
+              setShowFinancials(false);
+              setSearchTerm('');
               setSelectedOption(null);
             }}
             style={{ padding: '8px', background: '#333', color: 'white', border: '1px solid #666' }}
           >
             {showOptions ? 'Back to Dashboard' : 'Options Chain'}
           </button>
+
           <button
             onClick={() => {
               const goingBack = showFilings;
-              setCurrentPage(1);
-              setSearchTerm('');
               setShowFilings(!goingBack);
               setShowOptions(false);
               setShowNews(false);
+              setShowFinancials(false);
+              setSearchTerm('');
+              setCurrentPage(1);
               setSelectedOption(null);
             }}
             style={{ padding: '8px', background: '#333', color: 'white', border: '1px solid #666' }}
           >
-            {showFilings ? 'Back to Dashboard' : 'View SEC Filings'}
+            {showFilings ? 'Back to Dashboard' : 'SEC Filings'}
           </button>
+
           <button
             onClick={() => {
               const goingBack = showNews;
-              setCurrentPage(1);
               setShowNews(!goingBack);
-              setSearchTerm('');
-              setShowFilings(false);
               setShowOptions(false);
+              setShowFilings(false);
+              setShowFinancials(false);
+              setSearchTerm('');
+              setCurrentPage(1);
               setSelectedOption(null);
             }}
             style={{ padding: '8px', background: '#333', color: 'white', border: '1px solid #666' }}
           >
-          {showNews ? 'Back to Dashboard' : 'News Headlines'}
+            {showNews ? 'Back to Dashboard' : 'News Headlines'}
+          </button>
+
+          <button
+            onClick={() => {
+              const goingBack = showFinancials;
+              setShowFinancials(!goingBack);
+              setShowOptions(false);
+              setShowFilings(false);
+              setShowNews(false);
+              setSearchTerm('');
+              setSelectedOption(null);
+            }}
+            style={{ padding: '8px', background: '#333', color: 'white', border: '1px solid #666' }}
+          >
+            {showFinancials ? 'Back to Dashboard' : 'Financial Summary'}
           </button>
         </div>
       </div>
+
 
       {showNews ? (
         <div style={{ padding: '1rem' }}>
@@ -363,6 +412,86 @@ function App() {
           <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
             <button onClick={() => setCurrentPage(p => Math.max(p - 1, 1))} disabled={currentPage === 1}>Previous</button>
             <button onClick={() => setCurrentPage(p => p + 1)} disabled={(currentPage * 20) >= filteredFilings.length}>Next</button>
+          </div>
+        </div>
+      ) : showFinancials ? (
+        <div style={{ padding: '1rem' }}>
+          <h3>{info.shortName || symbol} ({symbol}) – Financial Summary</h3>
+
+          <div style={{ display: 'flex', gap: '2rem', alignItems: 'flex-start' }}>
+            {/* LEFT: Table of metrics */}
+            <div style={{ flex: 1 }}>
+              {financials.keyMetrics.length > 0 && financials.ratios.length > 0 ? (
+                <table style={{ width: '100%', marginTop: '1rem', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr>
+                      <th style={{ textAlign: 'left', borderBottom: '1px solid #ccc' }}>Metric</th>
+                      <th style={{ textAlign: 'left', borderBottom: '1px solid #ccc' }}>Latest Value</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[
+                      { label: 'PE Ratio', key: 'peRatio', source: 'keyMetrics' },
+                      { label: 'PB Ratio', key: 'pbRatio', source: 'keyMetrics' },
+                      { label: 'ROE (%)', key: 'returnOnEquity', source: 'keyMetrics', format: v => (v * 100).toFixed(2) },
+                      { label: 'Gross Margin (%)', key: 'grossProfitMargin', source: 'ratios', format: v => (v * 100).toFixed(2) },
+                      { label: 'EBITDA Margin (%)', key: 'ebitdaMargin', source: 'ratios', format: v => (v * 100).toFixed(2) },
+                      { label: 'Net Profit Margin (%)', key: 'netProfitMargin', source: 'ratios', format: v => (v * 100).toFixed(2) },
+                      { label: 'Debt/Equity', key: 'debtToEquity', source: 'keyMetrics' },
+                      { label: 'Current Ratio', key: 'currentRatio', source: 'keyMetrics' },
+                      { label: 'Market Cap', key: 'marketCap', source: 'keyMetrics', format: v => Number(v).toLocaleString() }
+                    ].map((item, idx) => {
+                      const latest = financials[item.source]?.[0]?.[item.key];
+                      const isSelected = selectedMetric?.key === item.key;
+
+                      return (
+                        <tr
+                          key={idx}
+                          onClick={() => setSelectedMetric(isSelected ? null : item)}
+                          style={{
+                            cursor: 'pointer',
+                            backgroundColor: isSelected ? '#d0ebff' : 'transparent'
+                          }}
+                        >
+                          <td>{item.label}</td>
+                          <td>{item.format ? item.format(latest) : latest ?? '–'}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              ) : (
+                <p>Loading financial data...</p>
+              )}
+            </div>
+            <div style={{ flex: 1 }}>
+              {selectedMetric && (
+                <div style={{ marginTop: '1rem' }}>
+                  <Plot
+                    data={[
+                      {
+                        x: financials[selectedMetric.source].map(d => d.date),
+                        y: financials[selectedMetric.source].map(d =>
+                          selectedMetric.format
+                            ? Number(selectedMetric.format(d[selectedMetric.key]))
+                            : d[selectedMetric.key]
+                        ),
+                        type: 'scatter',
+                        mode: 'lines+markers',
+                        name: selectedMetric.label
+                      }
+                    ]}
+                    layout={{
+                      title: `${selectedMetric.label} over Time`,
+                      xaxis: { title: 'Date' },
+                      yaxis: { title: selectedMetric.label },
+                      height: 400,
+                      width: 600
+                    }}
+                  />
+                </div>
+              )}
+            </div>
           </div>
         </div>
       ) : showOptions ? (
@@ -575,6 +704,34 @@ function App() {
                 }}
                 style={{ width: '100%' }}
               />
+
+              <table style={{ width: '100%', marginTop: '2rem', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: 'left', borderBottom: '1px solid #ccc' }}>Metric</th>
+                    <th style={{ textAlign: 'left', borderBottom: '1px solid #ccc' }}>Value</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr><td>Market Cap</td><td>{info.marketCap?.toLocaleString()}</td></tr>
+                  <tr><td>Trailing PE</td><td>{info.trailingPE ?? '–'}</td></tr>
+                  <tr><td>Price to Book</td><td>{info.priceToBook ?? '–'}</td></tr>
+                  <tr><td>Gross Margin</td><td>{(info.grossMargins * 100)?.toFixed(2)}%</td></tr>
+                  <tr><td>Operating Margin</td><td>{(info.operatingMargins * 100)?.toFixed(2)}%</td></tr>
+                  <tr><td>ROE</td><td>{(info.returnOnEquity * 100)?.toFixed(2)}%</td></tr>
+                  <tr><td>Revenue Growth</td><td>{(info.revenueGrowth * 100)?.toFixed(2)}%</td></tr>
+                  <tr><td>EPS Growth</td><td>{(info.earningsGrowth * 100)?.toFixed(2)}%</td></tr>
+                  <tr><td>EBITDA Margin</td><td>{(info.ebitdaMargins * 100)?.toFixed(2)}%</td></tr>
+                  <tr><td>Total Cash</td><td>{info.totalCash?.toLocaleString()}</td></tr>
+                  <tr><td>Total Debt</td><td>{info.totalDebt?.toLocaleString()}</td></tr>
+                  <tr><td>Current Ratio</td><td>{info.currentRatio ?? '–'}</td></tr>
+                  <tr><td>Short % Float</td><td>{(info.shortPercentOfFloat * 100)?.toFixed(2)}%</td></tr>
+                  <tr><td>Short Ratio</td><td>{info.shortRatio ?? '–'}</td></tr>
+                  <tr><td>Beta</td><td>{info.beta ?? '–'}</td></tr>
+                  <tr><td>Average Volume</td><td>{info.averageVolume?.toLocaleString()}</td></tr>
+                  <tr><td>Latest Volume</td><td>{info.volume?.toLocaleString()}</td></tr>
+                </tbody>
+              </table>
             </>
           )}
         </div>
